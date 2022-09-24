@@ -1,17 +1,18 @@
+import io
 import json
+from collections import OrderedDict
 from io import BytesIO
 from PIL import ImageTk, Image
-from tkinter import Button, Label, scrolledtext,Tk
 
 import fiona
+import PySimpleGUI as sg
 
 gdb = 'tests/S123_Photo_Log.gdb'
 
 if __name__ == '__main__':
+    # read images and attributes from gdb
     lyrs = fiona.listlayers(gdb)
     img_data = dict()
-    child_ids = set()
-    parent_ids = set()
     for lyr in lyrs:
         if '__ATTACH' in lyr:
             fc = lyr.split('__')[0]
@@ -24,33 +25,79 @@ if __name__ == '__main__':
                     att_data = BytesIO(c[i]['properties']['DATA'])
                     img_data[att_id] = {'att_name': att_name,
                                         'jpeg': att_data}
-                    child_ids.add(att_id)
-            # print(len(img_data), 'records')
 
             with fiona.open(gdb, layer=fc) as c:
                 # print(c.schema)
                 for i in range(1, len(c) + 1):
-                    properties = c[i]['properties']
-                    id = properties['globalid']
-                    img_data[id]['properties'] = properties
-                    parent_ids.add(id)
-            # print(len(parent_ids), 'records')
+                    properties: OrderedDict = c[i]['properties']
+                    gid = properties['globalid']
+                    img_data[gid]['properties'] = properties
 
-    root = Tk()
-    root.geometry('1000x450')
+    gids = list(img_data.keys())
+    first_image_gid = gids[0]
+    current_image_index = 0
+    total_count = len(gids)
+    print('Loaded GlobalIDs:')
+    for item in gids:
+        print(item)
+    print('Total records loaded: ', total_count)
+    print('Starting with: ', first_image_gid)
+    print('Loading GUI, do not close this window....')
 
-    blob = img_data['{79C2C967-F99C-4C65-AECD-663BA7D2C605}']['jpeg']
-    meta = img_data['{79C2C967-F99C-4C65-AECD-663BA7D2C605}']['att_name']
-    blob.seek(0)
-    b = Image.open(blob)
-    b = b.resize(size=(600, 400))
-    # b.show()
-    img = ImageTk.PhotoImage(b)
+    def blob_to_png(blob):
+        blob.seek(0)
+        img = Image.open(blob)
+        img = img.resize(size=(600, 400))
+        # img.show()
+        bio = io.BytesIO()
+        img.save(bio, format='PNG')
+        del img
+        return bio.getvalue()
 
-    label = Label(image=img)
-    label.grid(row=1, column=0, columnspan=3)
-    button_exit = Button(root, text="Exit", command=root.quit)
-    button_exit.grid(row=2, column=1)
-    text = Label(text=meta)
-    text.grid(row=1, column=4)
-    root.mainloop()
+    blob = blob_to_png(img_data[first_image_gid]['jpeg'])
+    meta = img_data[first_image_gid]['att_name']
+    properties = img_data[first_image_gid]['properties']
+
+    # tabular = zip(properties.keys(), properties.values())
+    # tabular_str = str()
+    # for row in tabular:
+    #     tabular_str += str(row[0]) + ':\t\t' + str(row[1]) + '\n'
+
+    sg.theme('DarkAmber')
+    layout = [[sg.Button('Previous'), sg.Button('Next')],
+              [sg.Text(meta, key='-META-')],
+              [sg.Text('1 of ' + str(total_count), key='-COUNT-')],
+              [sg.Image(data=blob, key='-IMAGE-')],
+              [sg.Button('Exit')]]
+    window = sg.Window('gdbvu - file: ' + gdb, layout)
+
+    while True:
+        event, values = window.read()
+        if event == sg.WIN_CLOSED or event == 'Exit':
+            break
+
+        if event in ['Next', 'Previous']:
+            if event == 'Next' and current_image_index < (total_count - 1):
+                current_image_index += 1
+            elif event == 'Previous':
+                current_image_index -= 1
+            current_image_gid = gids[current_image_index]
+
+            current_blob = img_data[current_image_gid]['jpeg']
+            current_img = blob_to_png(current_blob)
+            window['-IMAGE-'].update(data=current_img)
+
+            current_meta = img_data[current_image_gid]['att_name']
+            window['-META-'].update(current_meta)
+
+            if current_image_index >= 0:
+                current_count = current_image_index + 1
+            else:
+                current_count = total_count + 1 + current_image_index  # previous from first image is index -1 etc.
+
+            # window['-COUNT-'].update('[' + str(current_image_index) + '] '+str(current_count) + ' of ' + str(total_count))
+            window['-COUNT-'].update(str(current_count) + ' of ' + str(total_count))
+
+    window.close()
+
+    print('Exiting GUI....')
