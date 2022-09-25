@@ -28,34 +28,55 @@ def blob_to_file(b, out_jpeg):
     # print('Saved ', out_jpeg)
 
 
-gdb = 'tests/S123_Photo_Log.gdb'
-
-if __name__ == '__main__':
+def open_gdb():
+    gdb = sg.Window('gdbvu',
+              [[sg.Text('Select a .gdb folder')],
+               [sg.In(), sg.FolderBrowse()],
+               [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
     # read images and attributes from gdb
     lyrs = fiona.listlayers(gdb)
+    event, values = sg.Window('Select an ATTACH layer', layout=[[sg.Listbox(lyrs, key='-LIST-',
+                                                                size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
+                                                                select_mode='extended', bind_return_key=True), sg.OK()]]).read(close=True)
+    lyr = values['-LIST-'][0]
+    # print(lyr)
+    if '__ATTACH' not in lyr:
+        sg.popup_error('Selected layer is not an attachments table')
+        return
+    fc = lyr.split('__')[0]
     img_data = dict()
-    for lyr in lyrs:
-        if '__ATTACH' in lyr:
-            fc = lyr.split('__')[0]
-            # print(fc, '->', lyr)
-            with fiona.open(gdb, layer=lyr) as c:
-                # print(c.schema)
-                for i in range(1, len(c) + 1):
-                    att_name = c[i]['properties']['ATT_NAME']
-                    att_id = c[i]['properties']['REL_GLOBALID']
-                    att_data = BytesIO(c[i]['properties']['DATA'])
-                    img_data[att_id] = {'att_name': att_name,
-                                        'jpeg': att_data}
+    with fiona.open(gdb, layer=lyr) as c:
+        # print(c.schema)
+        try:
+            for i in range(1, len(c) + 1):
+                att_name = c[i]['properties']['ATT_NAME']
+                att_id = c[i]['properties']['REL_GLOBALID']
+                att_data = BytesIO(c[i]['properties']['DATA'])
+                img_data[att_id] = {'att_name': att_name,
+                                    'jpeg': att_data}
+        except TypeError:
+            sg.popup_error('Attachments table not found')
 
-            with fiona.open(gdb, layer=fc) as c:
-                # print(c.schema)
-                for i in range(1, len(c) + 1):
-                    properties: OrderedDict = c[i]['properties']
-                    gid = properties['globalid']
-                    img_data[gid]['properties'] = properties
+    with fiona.open(gdb, layer=fc) as c:
+        # print(c.schema)
+        try:
+            for i in range(1, len(c) + 1):
+                properties: OrderedDict = c[i]['properties']
+                gid = properties['globalid']
+                img_data[gid]['properties'] = properties
+        except TypeError:
+            sg.popup_error('No attachments found')
+    return img_data
 
+
+if __name__ == '__main__':
+    # load gdb from file
+    img_data = open_gdb()
     gids = list(img_data.keys())
-    first_image_gid = gids[0]
+    try:
+        first_image_gid = gids[0]
+    except IndexError:
+        sg.popup_error('GUID error')
     current_image_index = 0
     total_count = len(gids)
     # print('Loaded GlobalIDs:')
@@ -71,6 +92,7 @@ if __name__ == '__main__':
     attrs: list = list(zip(properties.keys(), properties.values()))
     # print(list(attrs))
 
+    # gui stuff
     sg.theme('DarkAmber')
 
     layout = [[sg.Text('Export folder:'), sg.In(size=(50, 1), enable_events=True, key='-FOLDER-'), sg.FolderBrowse(),
@@ -80,7 +102,7 @@ if __name__ == '__main__':
               [sg.Table(values=attrs, key='-ATTRIBUTES-', headings=['Field', 'Attribute'],
                         justification='left', auto_size_columns=False, col_widths=[15, 50])]]
 
-    window = sg.Window('gdbvu - file: ' + gdb, layout, return_keyboard_events=True, use_default_focus=False)
+    window = sg.Window('gdbvu', layout, return_keyboard_events=True, use_default_focus=False)
 
     while True:
         event, values = window.read()
@@ -118,11 +140,11 @@ if __name__ == '__main__':
             window['-ATTRIBUTES-'].update(attrs)
 
         if event == '-FOLDER-':
-            export_folder = values['-FOLDER-']
             # print(export_folder)
             window['-EXPORT-'].update(disabled=False)
 
         if event == '-EXPORT-':
+            export_folder = values['-FOLDER-']
             # print(export_folder)
             if not os.path.exists(export_folder):
                 sg.popup_annoying('ERROR: Folder path does not exist\n\n' + export_folder)
