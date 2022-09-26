@@ -32,75 +32,66 @@ def open_gdb():
                     [[sg.Text('Select a .gdb folder')],
                      [sg.In(), sg.FolderBrowse()],
                      [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
-    # read images and attributes from gdb
     lyrs = fiona.listlayers(gdb)
-    sg.Window('Select an ATTACH layer', layout=[[sg.Listbox(lyrs, key='-LIST-',
-                                                            size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
-                                                            select_mode='extended', bind_return_key=True), sg.OK()]]).read(close=True)
-    try:
-        lyr = values['-LIST-'][0]
-        fc = lyr.split('__')[0]
+    ev, val = sg.Window('Select an ATTACH layer',
+                        layout=[[sg.Listbox(lyrs, key='-LIST-',
+                                            size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
+                                            select_mode='extended', bind_return_key=True), sg.OK()]]).read(
+        close=True)
 
-        if '__ATTACH' not in lyr:
-            sg.popup_error('Selected layer is not an attachments table')
-            return
+    lyr = val['-LIST-'][0]
+    fc = lyr.split('__')[0]
 
-        data = dict()
-        with fiona.open(gdb, layer=lyr) as c:
-            # print(c.schema)
-            try:
-                for item in range(1, len(c) + 1):
-                    att_name = c[item]['properties']['ATT_NAME']
-                    att_id = c[item]['properties']['REL_GLOBALID']
-                    att_data = BytesIO(c[item]['properties']['DATA'])
-                    img_data[att_id] = {'jpeg': att_data,
-                                        'properties': {
-                                            'att_name': att_name}
-                                        }
-            except TypeError:
-                sg.popup_error('Attachments table not found')
+    if '__ATTACH' not in lyr:
+        sg.popup_error('Selected layer is not an attachments table')
+        exit(1)
 
-        with fiona.open(gdb, layer=fc) as c:
-            # print(c.schema)
-            try:
-                for item in range(1, len(c) + 1):
-                    prop = dict(c[item]['properties'])
-                    gd = properties['globalid']
-                    for ky in properties:
-                        img_data[gd]['properties'][ky] = prop[ky]
-            except TypeError:
-                sg.popup_error('No attachments found')
+    data = dict()
+    with fiona.open(gdb, layer=lyr) as c:
+        # print(c.schema)
+        try:
+            for item in range(1, len(c) + 1):
+                att_name = c[item]['properties']['ATT_NAME']
+                att_id = c[item]['properties']['REL_GLOBALID']
+                att_data = BytesIO(c[item]['properties']['DATA'])
+                data[att_id] = {'jpeg': att_data,
+                                'properties': {
+                                    'att_name': att_name}
+                                }
+        except TypeError:
+            sg.popup_error('Attachments table not found')
 
-        return data, lyr
+    with fiona.open(gdb, layer=fc) as c:
+        # print(c.schema)
+        try:
+            for item in range(1, len(c) + 1):
+                prop = dict(c[item]['properties'])
+                gd = prop['globalid']
+                for ky in prop:
+                    data[gd]['properties'][ky] = prop[ky]
+        except TypeError:
+            sg.popup_error('No attachments found')
 
-    except NameError:
-        sg.popup_error('No records found in layer')
+    return data, lyr
 
 
 if __name__ == '__main__':
     # load gdb from file
     img_data, lyr_name = open_gdb()
 
-    # print(type(img_data))
-    # print(type(img_data.values()))
-    # print(img_data.values()[0])
-
     gids = list(img_data.keys())
     first_image_gid = gids[0]
     current_image_index = 0
     total_count = len(gids)
 
-    print('Loading GUI, do not close this window....')
-
-    blob = blob_to_png(img_data[first_image_gid]['jpeg'])  # TODO put this block into functions
+    blob = blob_to_png(img_data[first_image_gid]['jpeg'])
     meta = img_data[first_image_gid]['properties']['att_name']
     properties = img_data[first_image_gid]['properties']
     attrs: list = list(zip(properties.keys(), properties.values()))
-    # print(list(attrs))
 
     # gui stuff
+    print('Loading GUI, do not close this window....')
     sg.theme('DarkAmber')
-
     layout = [[sg.Text('Export folder:'), sg.In(size=(50, 1), enable_events=True, key='-FOLDER-'), sg.FolderBrowse(),
                sg.Button('Export all', key='-EXPORT-', disabled=True)],
               [sg.Image(data=blob, key='-IMAGE-')],
