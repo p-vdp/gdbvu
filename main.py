@@ -1,13 +1,11 @@
 import io
 import os
-import json
 import pandas as pd
-from collections import OrderedDict
 from io import BytesIO
-from PIL import ImageTk, Image
+from PIL import Image
 
 import fiona
-import PySimpleGUI as sg
+import PySimpleGUI as sg  # noqa
 
 
 def blob_to_png(b):
@@ -36,45 +34,47 @@ def open_gdb():
                      [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
     # read images and attributes from gdb
     lyrs = fiona.listlayers(gdb)
-    event, values = sg.Window('Select an ATTACH layer', layout=[[sg.Listbox(lyrs, key='-LIST-',
-                                                                            size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
-                                                                            select_mode='extended', bind_return_key=True), sg.OK()]]).read(
-        close=True)
-    lyr = values['-LIST-'][0]
-    # print(lyr)
-    if '__ATTACH' not in lyr:
-        sg.popup_error('Selected layer is not an attachments table')
-        return
-    fc = lyr.split('__')[0]
-    img_data = dict()
-    with fiona.open(gdb, layer=lyr) as c:
-        # print(c.schema)
-        try:
-            for i in range(1, len(c) + 1):
-                att_name = c[i]['properties']['ATT_NAME']
-                att_id = c[i]['properties']['REL_GLOBALID']
-                att_data = BytesIO(c[i]['properties']['DATA'])
-                img_data[att_id] = {'jpeg': att_data,
-                                    'properties': {
-                                        'att_name': att_name
+    sg.Window('Select an ATTACH layer', layout=[[sg.Listbox(lyrs, key='-LIST-',
+                                                            size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
+                                                            select_mode='extended', bind_return_key=True), sg.OK()]]).read(close=True)
+    try:
+        lyr = values['-LIST-'][0]
+        fc = lyr.split('__')[0]
+
+        if '__ATTACH' not in lyr:
+            sg.popup_error('Selected layer is not an attachments table')
+            return
+
+        data = dict()
+        with fiona.open(gdb, layer=lyr) as c:
+            # print(c.schema)
+            try:
+                for item in range(1, len(c) + 1):
+                    att_name = c[item]['properties']['ATT_NAME']
+                    att_id = c[item]['properties']['REL_GLOBALID']
+                    att_data = BytesIO(c[item]['properties']['DATA'])
+                    img_data[att_id] = {'jpeg': att_data,
+                                        'properties': {
+                                            'att_name': att_name}
                                         }
-                                    }
-        except TypeError:
-            sg.popup_error('Attachments table not found')
+            except TypeError:
+                sg.popup_error('Attachments table not found')
 
-    with fiona.open(gdb, layer=fc) as c:
-        # print(c.schema)
-        try:
-            for i in range(1, len(c) + 1):
-                properties = dict(c[i]['properties'])
-                gid = properties['globalid']
-                for k in properties:
-                    img_data[gid]['properties'][k] = properties[k]
-        except TypeError:
-            sg.popup_error('No attachments found')
+        with fiona.open(gdb, layer=fc) as c:
+            # print(c.schema)
+            try:
+                for item in range(1, len(c) + 1):
+                    prop = dict(c[item]['properties'])
+                    gd = properties['globalid']
+                    for ky in properties:
+                        img_data[gd]['properties'][ky] = prop[ky]
+            except TypeError:
+                sg.popup_error('No attachments found')
 
-    lyr_name = fc
-    return img_data, lyr_name
+        return data, lyr
+
+    except NameError:
+        sg.popup_error('No records found in layer')
 
 
 if __name__ == '__main__':
@@ -86,17 +86,10 @@ if __name__ == '__main__':
     # print(img_data.values()[0])
 
     gids = list(img_data.keys())
-    try:
-        first_image_gid = gids[0]
-    except IndexError:
-        sg.popup_error('GUID error')
+    first_image_gid = gids[0]
     current_image_index = 0
     total_count = len(gids)
-    # print('Loaded GlobalIDs:')
-    # for item in gids:
-    #     print(item)
-    # print('Total records loaded: ', total_count)
-    # print('Starting with: ', first_image_gid)
+
     print('Loading GUI, do not close this window....')
 
     blob = blob_to_png(img_data[first_image_gid]['jpeg'])  # TODO put this block into functions
