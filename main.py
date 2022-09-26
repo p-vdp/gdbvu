@@ -1,6 +1,7 @@
 import io
 import os
 import json
+import pandas as pd
 from collections import OrderedDict
 from io import BytesIO
 from PIL import ImageTk, Image
@@ -30,14 +31,15 @@ def blob_to_file(b, out_jpeg):
 
 def open_gdb():
     gdb = sg.Window('gdbvu',
-              [[sg.Text('Select a .gdb folder')],
-               [sg.In(), sg.FolderBrowse()],
-               [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
+                    [[sg.Text('Select a .gdb folder')],
+                     [sg.In(), sg.FolderBrowse()],
+                     [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
     # read images and attributes from gdb
     lyrs = fiona.listlayers(gdb)
     event, values = sg.Window('Select an ATTACH layer', layout=[[sg.Listbox(lyrs, key='-LIST-',
-                                                                size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
-                                                                select_mode='extended', bind_return_key=True), sg.OK()]]).read(close=True)
+                                                                            size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
+                                                                            select_mode='extended', bind_return_key=True), sg.OK()]]).read(
+        close=True)
     lyr = values['-LIST-'][0]
     # print(lyr)
     if '__ATTACH' not in lyr:
@@ -52,8 +54,11 @@ def open_gdb():
                 att_name = c[i]['properties']['ATT_NAME']
                 att_id = c[i]['properties']['REL_GLOBALID']
                 att_data = BytesIO(c[i]['properties']['DATA'])
-                img_data[att_id] = {'att_name': att_name,
-                                    'jpeg': att_data}
+                img_data[att_id] = {'jpeg': att_data,
+                                    'properties': {
+                                        'att_name': att_name
+                                        }
+                                    }
         except TypeError:
             sg.popup_error('Attachments table not found')
 
@@ -61,17 +66,25 @@ def open_gdb():
         # print(c.schema)
         try:
             for i in range(1, len(c) + 1):
-                properties: OrderedDict = c[i]['properties']
+                properties = dict(c[i]['properties'])
                 gid = properties['globalid']
-                img_data[gid]['properties'] = properties
+                for k in properties:
+                    img_data[gid]['properties'][k] = properties[k]
         except TypeError:
             sg.popup_error('No attachments found')
-    return img_data
+
+    lyr_name = fc
+    return img_data, lyr_name
 
 
 if __name__ == '__main__':
     # load gdb from file
-    img_data = open_gdb()
+    img_data, lyr_name = open_gdb()
+
+    # print(type(img_data))
+    # print(type(img_data.values()))
+    # print(img_data.values()[0])
+
     gids = list(img_data.keys())
     try:
         first_image_gid = gids[0]
@@ -87,7 +100,7 @@ if __name__ == '__main__':
     print('Loading GUI, do not close this window....')
 
     blob = blob_to_png(img_data[first_image_gid]['jpeg'])  # TODO put this block into functions
-    meta = img_data[first_image_gid]['att_name']
+    meta = img_data[first_image_gid]['properties']['att_name']
     properties = img_data[first_image_gid]['properties']
     attrs: list = list(zip(properties.keys(), properties.values()))
     # print(list(attrs))
@@ -124,7 +137,7 @@ if __name__ == '__main__':
             current_img = blob_to_png(current_blob)
             window['-IMAGE-'].update(data=current_img)
 
-            current_meta = img_data[current_image_gid]['att_name']
+            current_meta = img_data[current_image_gid]['properties']['att_name']
             window['-META-'].update(current_meta)
 
             if current_image_index >= 0:
@@ -149,15 +162,24 @@ if __name__ == '__main__':
             if not os.path.exists(export_folder):
                 sg.popup_annoying('ERROR: Folder path does not exist\n\n' + export_folder)
             else:
+                out_tbl = list()
+                for k in img_data:
+                    out_tbl.append(img_data[k]['properties'])
+                out_tbl = pd.json_normalize(out_tbl)
+                out_xlsx = os.path.join(export_folder, lyr_name + '.xlsx')
+                out_tbl.to_excel(out_xlsx)
+
                 for i, gid in enumerate(gids):
-                    sg.one_line_progress_meter(title='Export', current_value=i+1, max_value=len(gids), no_button=True, orientation='h')
-                    filename = img_data[gid]['att_name']
+                    sg.one_line_progress_meter(title='Export', current_value=i + 1, max_value=len(gids), no_button=True, orientation='h')
+                    filename = img_data[gid]['properties']['att_name']
                     file_blob = img_data[gid]['jpeg']
                     out_file = os.path.join(export_folder, filename)
                     blob_to_file(file_blob, out_file)
 
-                sg.popup('Exported ' + str(total_count) + ' files to:\n' + export_folder)
-
+                sg.popup(f'Exported {str(total_count)} files to:\n'
+                         f'{export_folder}\n\n'
+                         f'Exported metadata table to:\n'
+                         f'{out_xlsx}')
     window.close()
 
     print('Exiting GUI....')
