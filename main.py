@@ -3,6 +3,7 @@ import os
 import pandas as pd
 from io import BytesIO
 from PIL import Image
+from sys import argv
 
 import fiona
 import PySimpleGUI as sg  # noqa
@@ -27,19 +28,21 @@ def blob_to_file(b, out_jpeg):
     # print('Saved ', out_jpeg)
 
 
-def open_gdb():
-    gdb = sg.Window('gdbvu',
-                    [[sg.Text('Select a .gdb folder')],
-                     [sg.In(), sg.FolderBrowse()],
-                     [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
-    lyrs = fiona.listlayers(gdb)
-    ev, val = sg.Window('Select an ATTACH layer',
-                        layout=[[sg.Listbox(lyrs, key='-LIST-',
-                                            size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
-                                            select_mode='extended', bind_return_key=True), sg.OK()]]).read(
-        close=True)
+def open_gdb(gdb=None, lyr=None):
+    if not gdb or not lyr:
+        gdb = sg.Window('gdbvu',
+                        [[sg.Text('Select a .gdb folder')],
+                         [sg.In(), sg.FolderBrowse()],
+                         [sg.Open(), sg.Cancel()]]).read(close=True)[1][0]
+        lyrs = fiona.listlayers(gdb)
+        ev, val = sg.Window('Select an ATTACH layer',
+                            layout=[[sg.Listbox(lyrs, key='-LIST-',
+                                                size=(max([len(str(v)) for v in lyrs]) + 2, len(lyrs)),
+                                                select_mode='extended', bind_return_key=True), sg.OK()]]).read(
+            close=True)
 
-    lyr = val['-LIST-'][0]
+        lyr = val['-LIST-'][0]
+
     fc = lyr.split('__')[0]
 
     if '__ATTACH' not in lyr:
@@ -76,8 +79,10 @@ def open_gdb():
 
 
 if __name__ == '__main__':
-    # load gdb from file
-    img_data, lyr_name = open_gdb()
+    if len(argv) > 1:  # load from parameters
+        img_data, lyr_name = open_gdb(argv[1], argv[2])
+    else:  # load gdb from file
+        img_data, lyr_name = open_gdb()
 
     gids = list(img_data.keys())
     first_image_gid = gids[0]
@@ -91,20 +96,63 @@ if __name__ == '__main__':
 
     # gui stuff
     print('Loading GUI, do not close this window....')
-    sg.theme('DarkAmber')
-    layout = [[sg.Text('Export folder:'), sg.In(size=(50, 1), enable_events=True, key='-FOLDER-'), sg.FolderBrowse(),
-               sg.Button('Export all', key='-EXPORT-', disabled=True)],
-              [sg.Image(data=blob, key='-IMAGE-')],
-              [sg.Button('Previous'), sg.Button('Next'), sg.Text(meta, key='-META-'), sg.Text('1 of ' + str(total_count), key='-COUNT-')],
-              [sg.Table(values=attrs, key='-ATTRIBUTES-', headings=['Field', 'Attribute'],
-                        justification='left', auto_size_columns=False, col_widths=[15, 50])]]
+    # sg.theme('DarkAmber')
 
-    window = sg.Window('gdbvu', layout, return_keyboard_events=True, use_default_focus=False)
+    widget_export = [sg.Text('Export folder:'), sg.In(size=(50, 1), enable_events=True, key='-FOLDER-'),
+                     sg.FolderBrowse(),
+                     sg.Button('Export all', key='-EXPORT-', disabled=True)]
+    widget_main_image = sg.Image(data=blob, key='-IMAGE-')
+    widget_prev = sg.Button('Previous')
+    widget_next = sg.Button('Next')
+    widget_filename = sg.Text(meta, key='-META-')
+    widget_count = sg.Text('1 of ' + str(total_count), key='-COUNT-')
+    widget_tbl = [sg.Table(values=attrs, key='-ATTRIBUTES-', headings=['Field', 'Attribute'],
+                           justification='left', auto_size_columns=True, vertical_scroll_only=False,
+                           size=(35, 26), expand_x=True, expand_y=True)]
+
+    left_layout = [  # sg.Image(enable_events=True, key=unique img id
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')],
+        [sg.Text('placeholder for scrolling pane')]
+    ]
+
+    center_layout = [
+        [widget_prev, widget_next, widget_filename, widget_count],
+        [widget_main_image],
+        widget_export
+    ]
+
+    right_layout = [
+        widget_tbl
+    ]
+
+    full_layout = [[sg.Column(left_layout, scrollable=True, expand_y=True), sg.Column(center_layout), sg.Column(right_layout)]]
+    window = sg.Window('gdbvu', full_layout, return_keyboard_events=True, use_default_focus=False, resizable=True)
 
     while True:
         event, values = window.read()
-        # print(event)
-        # print(values)
+        print(event)
+        print(values)
 
         if event == sg.WIN_CLOSED or event in ['Exit', 'Escape:27']:
             break
@@ -164,6 +212,10 @@ if __name__ == '__main__':
                          f'{export_folder}\n\n'
                          f'Exported metadata table to:\n'
                          f'{out_xlsx}')
+
+            # if event.startswith('IMAGE_No_'):
+            #   process sidebar image, make it main
+
     window.close()
 
     print('Exiting GUI....')
